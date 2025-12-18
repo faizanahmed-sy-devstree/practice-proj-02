@@ -4,15 +4,16 @@ import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { 
+import {
   ArrowDown01Icon,
   Layout01Icon,
   PackageIcon,
   ChartLineData01Icon,
   Settings02Icon,
   ActivityIcon,
-  Database01Icon
-} from "@hugeicons/core-free-icons"
+  Database01Icon,
+  Calendar01Icon,
+} from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -27,6 +28,11 @@ const navItems = [
     title: "Overview",
     href: "/",
     icon: Layout01Icon,
+  },
+  {
+    title: "Calendar",
+    href: "/calendar",
+    icon: Calendar01Icon,
   },
   {
     title: "Deployments",
@@ -48,7 +54,7 @@ const navItems = [
     href: "/settings",
     icon: Settings02Icon,
   },
-]
+];
 
 export function ContextBar() {
   const pathname = usePathname()
