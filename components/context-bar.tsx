@@ -16,6 +16,7 @@ import {
   Task01Icon,
   PencilIcon,
   PaintBrush01Icon,
+  GridIcon,
 } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -56,6 +57,11 @@ const navItems = [
     title: "Diagrams",
     href: "/diagrams",
     icon: PaintBrush01Icon,
+  },
+  {
+    title: "Patterns",
+    href: "/patterns",
+    icon: GridIcon,
   },
   {
     title: "Deployments",
