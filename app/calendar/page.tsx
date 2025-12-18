@@ -27,16 +27,23 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { HugeiconsIcon } from "@hugeicons/react"
-import { 
-  Calendar01Icon, 
-  Clock01Icon, 
-  PlusSignIcon, 
+import {
+  Calendar01Icon,
+  Clock01Icon,
+  PlusSignIcon,
   CoffeeIcon,
   Task01Icon,
-  MoreVerticalCircle01Icon
-} from "@hugeicons/core-free-icons"
-import { cn } from "@/lib/utils"
-import { format, addMinutes, startOfDay, differenceInMinutes, parse } from "date-fns"
+  MoreVerticalCircle01Icon,
+  Delete02Icon,
+} from "@hugeicons/core-free-icons";
+import { cn } from "@/lib/utils";
+import {
+  format,
+  addMinutes,
+  startOfDay,
+  differenceInMinutes,
+  parse,
+} from "date-fns";
 
 import {
   useCalendarStore,
@@ -645,6 +652,7 @@ export default function CalendarPage() {
                         calculatePosition={calculatePosition}
                         formatTime12h={formatTime12h}
                         removeEvent={removeEvent}
+                        updateEvent={updateEvent}
                         allEvents={events}
                       />
                     ))}
@@ -664,6 +672,7 @@ function DraggableEvent({
   calculatePosition,
   formatTime12h,
   removeEvent,
+  updateEvent,
   allEvents,
 }: {
   event: CalendarEvent;
@@ -675,11 +684,16 @@ function DraggableEvent({
   ) => { top: number; height: number; left: string | number; width: string };
   formatTime12h: (time24: string) => string;
   removeEvent: (id: string) => void;
+  updateEvent: (id: string, updates: Partial<CalendarEvent>) => void;
   allEvents: CalendarEvent[];
 }) {
+  const [isEditDialogOpen, setIsEditDialogOpen] = React.useState(false);
+  const [editDraft, setEditDraft] = React.useState<CalendarEvent>(event);
+
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
       id: event.id,
+      disabled: isEditDialogOpen,
     });
 
   const { top, height, left, width } = calculatePosition(
@@ -701,62 +715,139 @@ function DraggableEvent({
     opacity: isDragging ? 0.8 : 1,
   };
 
+  const handleSaveEdit = () => {
+    updateEvent(event.id, {
+      title: editDraft.title,
+      startTime: editDraft.startTime,
+      endTime: editDraft.endTime,
+      type: editDraft.type,
+    });
+    setIsEditDialogOpen(false);
+  };
+
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={cn(
-        "absolute rounded-lg border p-3 shadow-sm transition-all hover:shadow-md cursor-grab active:cursor-grabbing group",
-        event.color,
-        isDragging && "shadow-xl ring-2 ring-primary/20"
-      )}
-      {...attributes}
-      {...listeners}
+    <Dialog
+      open={isEditDialogOpen}
+      onOpenChange={(open) => {
+        if (open) setEditDraft(event);
+        setIsEditDialogOpen(open);
+      }}
     >
-      <div className="flex items-start justify-between">
-        <div className="space-y-1">
-          <div className="flex items-center gap-1.5">
-            <HugeiconsIcon
-              icon={event.type === "task" ? Task01Icon : CoffeeIcon}
-              size={14}
-              strokeWidth={2.5}
-            />
-            <span className="text-xs font-bold uppercase tracking-wider opacity-70">
-              {event.type}
-            </span>
-          </div>
-          <h3 className="text-sm font-bold leading-tight">{event.title}</h3>
-          <div className="flex items-center gap-1 text-[10px] font-medium opacity-60">
-            <HugeiconsIcon icon={Clock01Icon} size={10} />
-            {formatTime12h(event.startTime)} - {formatTime12h(event.endTime)}
+      <DialogTrigger
+        render={
+          <div
+            ref={setNodeRef}
+            style={style}
+            className={cn(
+              "absolute rounded-lg border p-3 shadow-sm transition-all hover:shadow-md cursor-grab active:cursor-grabbing group",
+              event.color,
+              isDragging && "shadow-xl ring-2 ring-primary/20"
+            )}
+            {...attributes}
+            {...listeners}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsEditDialogOpen(true);
+            }}
+          />
+        }
+      >
+        <div className="flex items-start justify-between">
+          <div className="space-y-1">
+            <div className="flex items-center gap-1.5">
+              <HugeiconsIcon
+                icon={event.type === "task" ? Task01Icon : CoffeeIcon}
+                size={14}
+                strokeWidth={2.5}
+              />
+              <span className="text-xs font-bold uppercase tracking-wider opacity-70">
+                {event.type}
+              </span>
+            </div>
+            <h3 className="text-sm font-bold leading-tight">{event.title}</h3>
+            <div className="flex items-center gap-1 text-[10px] font-medium opacity-60">
+              <HugeiconsIcon icon={Clock01Icon} size={10} />
+              {formatTime12h(event.startTime)} - {formatTime12h(event.endTime)}
+            </div>
           </div>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={(e) => e.stopPropagation()}
+      </DialogTrigger>
+
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Edit Event</DialogTitle>
+          <DialogDescription>
+            Update the details of your scheduled {event.type}.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid gap-2">
+            <Label htmlFor="edit-title">Title</Label>
+            <Input
+              id="edit-title"
+              value={editDraft.title}
+              onChange={(e) =>
+                setEditDraft({ ...editDraft, title: e.target.value })
+              }
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-type">Type</Label>
+              <Select
+                value={editDraft.type}
+                onValueChange={(v) =>
+                  v && setEditDraft({ ...editDraft, type: v as any })
+                }
+              >
+                <SelectTrigger id="edit-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="task">Task</SelectItem>
+                  <SelectItem value="break">Break</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Start Time</Label>
+              <TimePicker
+                value={editDraft.startTime}
+                onChange={(v) => setEditDraft({ ...editDraft, startTime: v })}
               />
-            }
+            </div>
+          </div>
+          <div className="grid gap-2">
+            <Label>End Time</Label>
+            <TimePicker
+              value={editDraft.endTime}
+              onChange={(v) => setEditDraft({ ...editDraft, endTime: v })}
+            />
+          </div>
+        </div>
+        <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-between gap-3 pt-6 border-t mt-4">
+          <Button
+            variant="ghost"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => {
+              removeEvent(event.id);
+              setIsEditDialogOpen(false);
+            }}
           >
-            <HugeiconsIcon icon={MoreVerticalCircle01Icon} size={14} />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              className="text-destructive"
-              onClick={(e) => {
-                e.stopPropagation();
-                removeEvent(event.id);
-              }}
+            <HugeiconsIcon icon={Delete02Icon} size={16} className="mr-2" />
+            Delete Event
+          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsEditDialogOpen(false)}
             >
-              Delete Event
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </div>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit}>Save Changes</Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
