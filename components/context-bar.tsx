@@ -13,15 +13,18 @@ import {
   ActivityIcon,
   Database01Icon,
   Calendar01Icon,
+  Task01Icon,
+  PencilIcon,
+  PaintBrush01Icon,
 } from "@hugeicons/core-free-icons";
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu";
 
 const navItems = [
   {
@@ -38,6 +41,21 @@ const navItems = [
     title: "Booking",
     href: "/booking",
     icon: Calendar01Icon,
+  },
+  {
+    title: "Lesson Plans",
+    href: "/lesson-plans",
+    icon: Task01Icon,
+  },
+  {
+    title: "Grading",
+    href: "/grading",
+    icon: PencilIcon,
+  },
+  {
+    title: "Diagrams",
+    href: "/diagrams",
+    icon: PaintBrush01Icon,
   },
   {
     title: "Deployments",
