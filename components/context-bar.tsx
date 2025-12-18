@@ -35,6 +35,11 @@ const navItems = [
     icon: Calendar01Icon,
   },
   {
+    title: "Booking",
+    href: "/booking",
+    icon: Calendar01Icon,
+  },
+  {
     title: "Deployments",
     href: "/deployments",
     icon: PackageIcon,
