@@ -38,42 +38,10 @@ import {
 import { cn } from "@/lib/utils"
 import { format, addMinutes, startOfDay, differenceInMinutes, parse } from "date-fns"
 
-interface CalendarEvent {
-  id: string
-  title: string
-  startTime: string // "HH:mm"
-  endTime: string // "HH:mm"
-  type: "task" | "break"
-  color: string
-}
-
-const INITIAL_EVENTS: CalendarEvent[] = [
-  {
-    id: "1",
-    title: "Morning Standup",
-    startTime: "10:00",
-    endTime: "10:30",
-    type: "task",
-    color: "bg-blue-500/10 text-blue-600 border-blue-200",
-  },
-  {
-    id: "2",
-    title: "Lunch Break",
-    startTime: "13:00",
-    endTime: "14:00",
-    type: "break",
-    color: "bg-emerald-500/10 text-emerald-600 border-emerald-200",
-  },
-  {
-    id: "3",
-    title: "Project Deep Work",
-    startTime: "14:30",
-    endTime: "17:00",
-    type: "task",
-    color: "bg-purple-500/10 text-purple-600 border-purple-200",
-  },
-]
-
+import {
+  useCalendarStore,
+  type CalendarEvent,
+} from "@/store/use-calendar-store";
 import {
   Dialog,
   DialogContent,
@@ -82,47 +50,155 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog"
-
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { TimePicker } from "@/components/ui/time-picker";
+import { RefreshIcon } from "@hugeicons/core-free-icons";
+
+import {
+  DndContext,
+  useDraggable,
+  DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  restrictToVerticalAxis,
+  restrictToParentElement,
+} from "@dnd-kit/modifiers";
 
 export default function CalendarPage() {
-  const [workStart, setWorkStart] = React.useState("09:00");
-  const [workEnd, setWorkEnd] = React.useState("19:00");
-  const [events, setEvents] = React.useState<CalendarEvent[]>(INITIAL_EVENTS);
+  const {
+    workStart,
+    workEnd,
+    events,
+    setWorkStart,
+    setWorkEnd,
+    addEvent,
+    updateEvent,
+    removeEvent,
+    reset,
+  } = useCalendarStore();
+
   const [isMultiple, setIsMultiple] = React.useState(false);
   const [dialogOpen, setDialogOpen] = React.useState(false);
+  const [mounted, setMounted] = React.useState(false);
 
-  const [newEvent, setNewEvent] = React.useState<Partial<CalendarEvent>>({
-    type: "task",
-    startTime: "11:00",
-    endTime: "12:00",
-    title: "",
-  });
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const [draftEvents, setDraftEvents] = React.useState<
+    Partial<CalendarEvent>[]
+  >([{ type: "task", startTime: "11:00", endTime: "12:00", title: "" }]);
 
   const handleAddEvent = () => {
-    if (!newEvent.title || !newEvent.startTime || !newEvent.endTime) return;
+    const validDrafts = draftEvents.filter(
+      (d) => d.title && d.startTime && d.endTime
+    );
+    if (validDrafts.length === 0) return;
 
     const colors = {
       task: "bg-blue-500/10 text-blue-600 border-blue-200",
       break: "bg-emerald-500/10 text-emerald-600 border-emerald-200",
     };
 
-    const event: CalendarEvent = {
-      id: Math.random().toString(36).substr(2, 9),
-      title: newEvent.title,
-      startTime: newEvent.startTime,
-      endTime: newEvent.endTime,
-      type: newEvent.type as "task" | "break",
-      color: colors[newEvent.type as "task" | "break"],
-    };
+    validDrafts.forEach((draft) => {
+      const event: CalendarEvent = {
+        id: Math.random().toString(36).substr(2, 9),
+        title: draft.title!,
+        startTime: draft.startTime!,
+        endTime: draft.endTime!,
+        type: (draft.type as "task" | "break") || "task",
+        color: colors[(draft.type as "task" | "break") || "task"],
+      };
+      addEvent(event);
+    });
 
-    setEvents([...events, event]);
-    setNewEvent({ ...newEvent, title: "" }); // Keep times for quick multiple entry
-
-    if (!isMultiple) {
+    if (isMultiple) {
+      setDraftEvents([
+        { type: "task", startTime: "11:00", endTime: "12:00", title: "" },
+        { type: "task", startTime: "11:00", endTime: "12:00", title: "" },
+        { type: "task", startTime: "11:00", endTime: "12:00", title: "" },
+      ]);
+    } else {
+      setDraftEvents([
+        { type: "task", startTime: "11:00", endTime: "12:00", title: "" },
+      ]);
       setDialogOpen(false);
     }
+  };
+
+  const addMoreForm = () => {
+    setDraftEvents([
+      ...draftEvents,
+      { type: "task", startTime: "11:00", endTime: "12:00", title: "" },
+    ]);
+  };
+
+  const updateDraft = (index: number, updates: Partial<CalendarEvent>) => {
+    const newDrafts = [...draftEvents];
+    newDrafts[index] = { ...newDrafts[index], ...updates };
+    setDraftEvents(newDrafts);
+  };
+
+  const removeDraft = (index: number) => {
+    if (draftEvents.length <= 1) return;
+    setDraftEvents(draftEvents.filter((_, i) => i !== index));
+  };
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, delta } = event;
+    if (!active) return;
+
+    const calendarEvent = events.find((e) => e.id === active.id);
+    if (!calendarEvent) return;
+
+    // Calculate minute delta (64px = 30 mins)
+    const minuteDelta = Math.round(((delta.y / 64) * 30) / 5) * 5; // Snap to 5 mins
+
+    if (minuteDelta === 0) return;
+
+    const start = parse(calendarEvent.startTime, "HH:mm", new Date());
+    const end = parse(calendarEvent.endTime, "HH:mm", new Date());
+
+    const duration = differenceInMinutes(end, start);
+    let newStart = addMinutes(start, minuteDelta);
+
+    // Clamp to work day
+    const dayStart = parse(workStart, "HH:mm", new Date());
+    const dayEnd = parse(workEnd, "HH:mm", new Date());
+
+    if (newStart < dayStart) newStart = dayStart;
+    if (addMinutes(newStart, duration) > dayEnd) {
+      newStart = addMinutes(dayEnd, -duration);
+    }
+
+    const newEnd = addMinutes(newStart, duration);
+
+    updateEvent(calendarEvent.id, {
+      startTime: format(newStart, "HH:mm"),
+      endTime: format(newEnd, "HH:mm"),
+    });
   };
 
   // Generate time slots (every 30 mins)
@@ -205,6 +281,8 @@ export default function CalendarPage() {
     return `${h12}:${m.toString().padStart(2, "0")} ${period}`;
   };
 
+  if (!mounted) return null;
+
   return (
     <DashboardLayout>
       <div className="space-y-8">
@@ -223,6 +301,39 @@ export default function CalendarPage() {
               Today
             </Button>
 
+            <AlertDialog>
+              <AlertDialogTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive hover:bg-destructive/10"
+                  />
+                }
+              >
+                <HugeiconsIcon icon={RefreshIcon} size={16} className="mr-2" />
+                Reset
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will clear all your calendar events and reset work
+                    hours to default. This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={reset}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    Reset Everything
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger
                 render={
@@ -232,83 +343,203 @@ export default function CalendarPage() {
                 <HugeiconsIcon icon={PlusSignIcon} size={16} className="mr-2" />
                 Add Event
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[425px]">
-                <DialogHeader>
-                  <DialogTitle>Add New Event</DialogTitle>
-                  <DialogDescription>
-                    Create a new task or break in your schedule.
+              <DialogContent className="sm:max-w-[800px] max-h-[90vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl">
+                <DialogHeader className="p-8 pb-0">
+                  <DialogTitle className="text-2xl font-bold">
+                    Add New Event
+                  </DialogTitle>
+                  <DialogDescription className="text-base">
+                    Create one or more tasks or breaks in your schedule.
                   </DialogDescription>
                 </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="flex items-center gap-4 mb-2">
+
+                <div className="flex-1 overflow-y-auto p-8 pt-6 space-y-8 no-scrollbar">
+                  <div className="flex p-1 bg-muted/50 rounded-xl w-fit mx-auto mb-4">
                     <Button
-                      variant={!isMultiple ? "default" : "outline"}
+                      variant={!isMultiple ? "default" : "ghost"}
                       size="sm"
-                      className="flex-1"
-                      onClick={() => setIsMultiple(false)}
+                      className={cn(
+                        "px-8 rounded-lg transition-all",
+                        !isMultiple &&
+                          "bg-background text-foreground shadow-sm hover:bg-background"
+                      )}
+                      onClick={() => {
+                        setIsMultiple(false);
+                        if (draftEvents.length > 1)
+                          setDraftEvents([draftEvents[0]]);
+                      }}
                     >
                       Single Entry
                     </Button>
                     <Button
-                      variant={isMultiple ? "default" : "outline"}
+                      variant={isMultiple ? "default" : "ghost"}
                       size="sm"
-                      className="flex-1"
-                      onClick={() => setIsMultiple(true)}
+                      className={cn(
+                        "px-8 rounded-lg transition-all",
+                        isMultiple &&
+                          "bg-background text-foreground shadow-sm hover:bg-background"
+                      )}
+                      onClick={() => {
+                        setIsMultiple(true);
+                        if (draftEvents.length < 3) {
+                          const newDrafts = [...draftEvents];
+                          while (newDrafts.length < 3) {
+                            newDrafts.push({
+                              type: "task",
+                              startTime: "11:00",
+                              endTime: "12:00",
+                              title: "",
+                            });
+                          }
+                          setDraftEvents(newDrafts);
+                        }
+                      }}
                     >
                       Multiple Entry
                     </Button>
                   </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="title">Title</Label>
-                    <Input
-                      id="title"
-                      placeholder="e.g. Design Review"
-                      value={newEvent.title}
-                      onChange={(e) =>
-                        setNewEvent({ ...newEvent, title: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="type">Type</Label>
-                      <Select
-                        value={newEvent.type}
-                        onValueChange={(v) =>
-                          v && setNewEvent({ ...newEvent, type: v as any })
-                        }
+
+                  <div
+                    className={cn(
+                      "grid gap-6",
+                      isMultiple
+                        ? "grid-cols-1 md:grid-cols-2"
+                        : "grid-cols-1 max-w-xl mx-auto"
+                    )}
+                  >
+                    {draftEvents.map((draft, index) => (
+                      <div
+                        key={index}
+                        className="relative space-y-5 p-6 rounded-2xl border bg-card/50 shadow-sm group/form hover:border-primary/20 transition-colors"
                       >
-                        <SelectTrigger id="type">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="task">Task</SelectItem>
-                          <SelectItem value="break">Break</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>Start Time</Label>
-                      <TimePicker
-                        value={newEvent.startTime}
-                        onChange={(v) =>
-                          setNewEvent({ ...newEvent, startTime: v })
-                        }
-                      />
-                    </div>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>End Time</Label>
-                    <TimePicker
-                      value={newEvent.endTime}
-                      onChange={(v) => setNewEvent({ ...newEvent, endTime: v })}
-                    />
+                        {isMultiple && draftEvents.length > 1 && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="absolute -right-3 -top-3 h-8 w-8 rounded-full bg-background border shadow-md opacity-0 group-hover/form:opacity-100 transition-all hover:bg-destructive hover:text-destructive-foreground hover:border-destructive"
+                            onClick={() => removeDraft(index)}
+                          >
+                            <HugeiconsIcon
+                              icon={PlusSignIcon}
+                              size={14}
+                              className="rotate-45"
+                            />
+                          </Button>
+                        )}
+
+                        <div className="grid gap-2.5">
+                          <Label
+                            htmlFor={`title-${index}`}
+                            className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1"
+                          >
+                            Event Title
+                          </Label>
+                          <Input
+                            id={`title-${index}`}
+                            placeholder="e.g. Design Review"
+                            className="h-11 rounded-xl bg-background/50 border-muted-foreground/20 focus:bg-background transition-all"
+                            value={draft.title}
+                            onChange={(e) =>
+                              updateDraft(index, { title: e.target.value })
+                            }
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="grid gap-2.5">
+                            <Label
+                              htmlFor={`type-${index}`}
+                              className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1"
+                            >
+                              Type
+                            </Label>
+                            <Select
+                              value={draft.type}
+                              onValueChange={(v) =>
+                                v && updateDraft(index, { type: v as any })
+                              }
+                            >
+                              <SelectTrigger
+                                id={`type-${index}`}
+                                className="h-11 rounded-xl bg-background/50 border-muted-foreground/20"
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="task">Task</SelectItem>
+                                <SelectItem value="break">Break</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="grid gap-2.5">
+                            <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">
+                              Start Time
+                            </Label>
+                            <TimePicker
+                              value={draft.startTime}
+                              onChange={(v) =>
+                                updateDraft(index, { startTime: v })
+                              }
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid gap-2.5">
+                          <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground ml-1">
+                            End Time
+                          </Label>
+                          <TimePicker
+                            value={draft.endTime}
+                            onChange={(v) => updateDraft(index, { endTime: v })}
+                          />
+                        </div>
+                      </div>
+                    ))}
+
+                    {isMultiple && (
+                      <Button
+                        variant="outline"
+                        className="flex flex-col items-center justify-center gap-2 h-auto min-h-[200px] rounded-2xl border-dashed border-2 bg-muted/20 hover:bg-primary/5 hover:border-primary/50 transition-all group/add"
+                        onClick={addMoreForm}
+                      >
+                        <div className="p-3 rounded-full bg-background border shadow-sm group-hover/add:scale-110 transition-transform">
+                          <HugeiconsIcon
+                            icon={PlusSignIcon}
+                            size={20}
+                            className="text-primary"
+                          />
+                        </div>
+                        <span className="font-semibold text-muted-foreground group-hover:text-primary transition-colors">
+                          Add Another Event
+                        </span>
+                      </Button>
+                    )}
                   </div>
                 </div>
-                <DialogFooter>
-                  <Button onClick={handleAddEvent}>
-                    {isMultiple ? "Add & Continue" : "Save Event"}
-                  </Button>
+
+                <DialogFooter className="p-8 pt-4 border-t bg-muted/5">
+                  <div className="flex items-center justify-between w-full gap-4">
+                    <div className="text-sm text-muted-foreground font-medium">
+                      {isMultiple ? (
+                        <span>
+                          Ready to add{" "}
+                          <span className="text-primary font-bold">
+                            {draftEvents.filter((d) => d.title).length}
+                          </span>{" "}
+                          events to your schedule
+                        </span>
+                      ) : (
+                        <span>Fill in the details to schedule your event</span>
+                      )}
+                    </div>
+                    <Button
+                      onClick={handleAddEvent}
+                      size="lg"
+                      className="px-10 rounded-xl shadow-lg shadow-primary/20"
+                    >
+                      {isMultiple ? "Add All Events" : "Save Event"}
+                    </Button>
+                  </div>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -399,84 +630,25 @@ export default function CalendarPage() {
                   ))}
 
                   {/* Events */}
-                  {events.map((event) => {
-                    const { top, height, left, width } = calculatePosition(
-                      event.startTime,
-                      event.endTime,
-                      events,
-                      event.id
-                    );
-                    return (
-                      <div
+                  <DndContext
+                    sensors={sensors}
+                    onDragEnd={handleDragEnd}
+                    modifiers={[
+                      restrictToVerticalAxis,
+                      restrictToParentElement,
+                    ]}
+                  >
+                    {events.map((event) => (
+                      <DraggableEvent
                         key={event.id}
-                        className={cn(
-                          "absolute rounded-lg border p-3 shadow-sm transition-all hover:shadow-md cursor-pointer group",
-                          event.color
-                        )}
-                        style={{
-                          top: `${top}px`,
-                          height: `${height}px`,
-                          left: left,
-                          width: width,
-                        }}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1.5">
-                              <HugeiconsIcon
-                                icon={
-                                  event.type === "task"
-                                    ? Task01Icon
-                                    : CoffeeIcon
-                                }
-                                size={14}
-                                strokeWidth={2.5}
-                              />
-                              <span className="text-xs font-bold uppercase tracking-wider opacity-70">
-                                {event.type}
-                              </span>
-                            </div>
-                            <h3 className="text-sm font-bold leading-tight">
-                              {event.title}
-                            </h3>
-                            <div className="flex items-center gap-1 text-[10px] font-medium opacity-60">
-                              <HugeiconsIcon icon={Clock01Icon} size={10} />
-                              {formatTime12h(event.startTime)} -{" "}
-                              {formatTime12h(event.endTime)}
-                            </div>
-                          </div>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              render={
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                                />
-                              }
-                            >
-                              <HugeiconsIcon
-                                icon={MoreVerticalCircle01Icon}
-                                size={14}
-                              />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                className="text-destructive"
-                                onClick={() =>
-                                  setEvents(
-                                    events.filter((e) => e.id !== event.id)
-                                  )
-                                }
-                              >
-                                Delete Event
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </div>
-                    );
-                  })}
+                        event={event}
+                        calculatePosition={calculatePosition}
+                        formatTime12h={formatTime12h}
+                        removeEvent={removeEvent}
+                        allEvents={events}
+                      />
+                    ))}
+                  </DndContext>
                 </div>
               </div>
             </CardContent>
@@ -484,5 +656,107 @@ export default function CalendarPage() {
         </div>
       </div>
     </DashboardLayout>
+  );
+}
+
+function DraggableEvent({
+  event,
+  calculatePosition,
+  formatTime12h,
+  removeEvent,
+  allEvents,
+}: {
+  event: CalendarEvent;
+  calculatePosition: (
+    startTime: string,
+    endTime: string,
+    allEvents: CalendarEvent[],
+    currentId: string
+  ) => { top: number; height: number; left: string | number; width: string };
+  formatTime12h: (time24: string) => string;
+  removeEvent: (id: string) => void;
+  allEvents: CalendarEvent[];
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({
+      id: event.id,
+    });
+
+  const { top, height, left, width } = calculatePosition(
+    event.startTime,
+    event.endTime,
+    allEvents,
+    event.id
+  );
+
+  const style = {
+    top: `${top}px`,
+    height: `${height}px`,
+    left: left,
+    width: width,
+    transform: transform
+      ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+      : undefined,
+    zIndex: isDragging ? 50 : 10,
+    opacity: isDragging ? 0.8 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "absolute rounded-lg border p-3 shadow-sm transition-all hover:shadow-md cursor-grab active:cursor-grabbing group",
+        event.color,
+        isDragging && "shadow-xl ring-2 ring-primary/20"
+      )}
+      {...attributes}
+      {...listeners}
+    >
+      <div className="flex items-start justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center gap-1.5">
+            <HugeiconsIcon
+              icon={event.type === "task" ? Task01Icon : CoffeeIcon}
+              size={14}
+              strokeWidth={2.5}
+            />
+            <span className="text-xs font-bold uppercase tracking-wider opacity-70">
+              {event.type}
+            </span>
+          </div>
+          <h3 className="text-sm font-bold leading-tight">{event.title}</h3>
+          <div className="flex items-center gap-1 text-[10px] font-medium opacity-60">
+            <HugeiconsIcon icon={Clock01Icon} size={10} />
+            {formatTime12h(event.startTime)} - {formatTime12h(event.endTime)}
+          </div>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={(e) => e.stopPropagation()}
+              />
+            }
+          >
+            <HugeiconsIcon icon={MoreVerticalCircle01Icon} size={14} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              className="text-destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                removeEvent(event.id);
+              }}
+            >
+              Delete Event
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
   );
 }
