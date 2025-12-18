@@ -164,7 +164,7 @@ export default function ChatPage() {
           </div>
 
           {/* Messages */}
-          <ScrollArea className="flex-1 p-6" viewportRef={scrollRef}>
+          <div className="flex-1 overflow-y-auto p-6" ref={scrollRef}>
             <div className="space-y-8 pb-4">
               <div className="flex justify-center">
                 <Badge variant="secondary" className="text-[10px] font-bold uppercase tracking-widest bg-muted/50 px-4 py-1 rounded-full">Today</Badge>
@@ -204,7 +204,7 @@ export default function ChatPage() {
                 </div>
               )}
             </div>
-          </ScrollArea>
+          </div>
 
           {/* Input */}
           <div className="p-6 bg-background/80 backdrop-blur-xl border-t">
