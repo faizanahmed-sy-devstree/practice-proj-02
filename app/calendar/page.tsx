@@ -240,34 +240,82 @@ export default function CalendarPage() {
     const top = differenceInMinutes(start, workDayStart) * (64 / 30);
     const height = Math.max(differenceInMinutes(end, start) * (64 / 30), 20); // Min height 20px
 
-    // Overlap detection
-    const overlappingEvents = allEvents
-      .filter((e) => {
-        if (e.id === currentId) return false;
-        const eStart = parse(e.startTime, "HH:mm", new Date());
-        let eEnd = parse(e.endTime, "HH:mm", new Date());
-        if (eEnd <= eStart) eEnd = addMinutes(eEnd, 24 * 60);
+    // Overlap detection and cluster grouping
+    const getCluster = (id: string) => {
+      const cluster = new Set<string>();
+      const stack = [id];
+      cluster.add(id);
+      while (stack.length > 0) {
+        const current = stack.pop()!;
+        const currEv = allEvents.find((e) => e.id === current)!;
+        const s1 = parse(currEv.startTime, "HH:mm", new Date());
+        let e1 = parse(currEv.endTime, "HH:mm", new Date());
+        if (e1 <= s1) e1 = addMinutes(e1, 24 * 60);
 
-        return start < eEnd && end > eStart;
-      })
-      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+        allEvents.forEach((other) => {
+          if (cluster.has(other.id)) return;
+          const s2 = parse(other.startTime, "HH:mm", new Date());
+          let e2 = parse(other.endTime, "HH:mm", new Date());
+          if (e2 <= s2) e2 = addMinutes(e2, 24 * 60);
+
+          if (startOfDay(s1).getTime() === startOfDay(s2).getTime()) {
+            if (s1 < e2 && e1 > s2) {
+              cluster.add(other.id);
+              stack.push(other.id);
+            }
+          }
+        });
+      }
+      return Array.from(cluster).map(
+        (cid) => allEvents.find((e) => e.id === cid)!
+      );
+    };
+
+    const cluster = getCluster(currentId);
 
     let left: string | number = "4px";
     let width = "calc(100% - 8px)";
 
-    if (overlappingEvents.length > 0) {
-      const allOverlapping = [
-        { id: currentId, startTime },
-        ...overlappingEvents.map((e) => ({ id: e.id, startTime: e.startTime })),
-      ].sort((a, b) => {
+    if (cluster.length > 1) {
+      const sortedCluster = cluster.sort((a, b) => {
         if (a.startTime !== b.startTime)
           return a.startTime.localeCompare(b.startTime);
         return a.id.localeCompare(b.id);
       });
 
-      const total = allOverlapping.length;
+      const columns: string[][] = [];
+      const eventToColumn: Record<string, number> = {};
+
+      sortedCluster.forEach((ev) => {
+        let assigned = false;
+        const s1 = parse(ev.startTime, "HH:mm", new Date());
+        let e1 = parse(ev.endTime, "HH:mm", new Date());
+        if (e1 <= s1) e1 = addMinutes(e1, 24 * 60);
+
+        for (let i = 0; i < columns.length; i++) {
+          const hasOverlap = columns[i].some((id) => {
+            const other = sortedCluster.find((o) => o.id === id)!;
+            const s2 = parse(other.startTime, "HH:mm", new Date());
+            let e2 = parse(other.endTime, "HH:mm", new Date());
+            if (e2 <= s2) e2 = addMinutes(e2, 24 * 60);
+            return s1 < e2 && e1 > s2;
+          });
+          if (!hasOverlap) {
+            columns[i].push(ev.id);
+            eventToColumn[ev.id] = i;
+            assigned = true;
+            break;
+          }
+        }
+        if (!assigned) {
+          eventToColumn[ev.id] = columns.length;
+          columns.push([ev.id]);
+        }
+      });
+
+      const total = columns.length;
       const colWidth = 100 / total;
-      const myIndex = allOverlapping.findIndex((e) => e.id === currentId);
+      const myIndex = eventToColumn[currentId];
 
       left = `${myIndex * colWidth + 0.2}%`;
       width = `${colWidth - 0.4}%`;
